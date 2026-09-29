@@ -1,0 +1,15 @@
+name = "superinstance-api"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "superinstance-db"
+database_id = "3ce95d8d-69cd-4bc8-8470-b03739e0190a"
+
+[ai]
+binding = "AI"
+
+[[vectorize]]
+binding = "INDEX"
+index_name = "superinstance-index"
