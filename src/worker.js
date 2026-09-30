@@ -352,6 +352,16 @@ async function coreWitness(args, env) {
   return row;
 }
 
+/** Fleet reflex inventory — used by local runners (lever-runner) to sync. */
+async function coreIntents(args, env) {
+  const limit = clampInt(args.limit, 1, 500, 100);
+  const rows = await env.DB.prepare(
+    "SELECT id, intent, context, reflex, confidence, uses, created_ts, updated_ts FROM intents ORDER BY updated_ts DESC LIMIT ?1"
+  ).bind(limit).all();
+  const intents = (rows && rows.results) || [];
+  return { count: intents.length, intents };
+}
+
 // ─────────────────────────────── MCP surface ───────────────────────────────
 
 const TOOL_SCHEMAS = {
@@ -366,6 +376,7 @@ const TOOL_SCHEMAS = {
   tile_demote: { room: "string (required)", key: "string (required)", to_tier: "full|gist|hint (required)", content: "string (compressed form)", fact_survival: "number", lattice_snap: "number", method: "string (required)" },
   pinch: { intent: "string (required)", context: "string" },
   pinch_compile: { intent: "string (required)", reflex: "string (required)", confidence: "number 0..1 (required)", context: "string" },
+  intents_list: { limit: "int 1..500" },
   field_query: { agent: "string" },
   witness_get: { id: "string (required)" },
 };
@@ -375,6 +386,7 @@ const CORE_BY_TOOL = {
   room_create: coreRoomCreate, room_list: coreRoomList,
   tile_write: coreTileWrite, tile_get: coreTileGet, tile_history: coreTileHistory, tile_demote: coreTileDemote,
   pinch: corePinch, pinch_compile: corePinchCompile,
+  intents_list: coreIntents,
   field_query: coreField, witness_get: coreWitness,
 };
 
@@ -485,8 +497,9 @@ export default {
       if (request.method === "POST" && path === "/pinch/compile") return json(await corePinchCompile(args, env));
       if (request.method === "GET" && path === "/field") return json(await coreField(args, env, agent));
       if (request.method === "GET" && path === "/witness") return json(await coreWitness(args, env));
+      if (request.method === "GET" && path === "/intents") return json(await coreIntents(args, env));
 
-      return json({ error: "not found", service: "superinstance-api", routes: ["POST /book", "GET /near", "GET /since", "POST /room", "GET /rooms", "POST /tile", "GET /tile", "GET /tile/history", "POST /tile/demote", "POST /pinch", "POST /pinch/compile", "GET /field", "GET /witness", "POST /mcp"] }, 404);
+      return json({ error: "not found", service: "superinstance-api", routes: ["POST /book", "GET /near", "GET /since", "POST /room", "GET /rooms", "POST /tile", "GET /tile", "GET /tile/history", "POST /tile/demote", "POST /pinch", "POST /pinch/compile", "GET /field", "GET /witness", "GET /intents", "POST /mcp"] }, 404);
     } catch (err) {
       if (err instanceof HttpError) return json({ error: err.message }, err.status);
       return json({ error: String((err && err.message) || err) }, 500);

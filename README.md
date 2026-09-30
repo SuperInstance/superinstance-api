@@ -78,6 +78,8 @@ env secret `SI_API_TOKENS` (comma-separated) on the Worker.
 - [x] per-agent tokens + deploy + smoke (11/11 green)
 - [ ] docs page (Pages) + client skills for Claude Code / OpenCode / OpenClaw
 
+*Clients done (`clients/README.md`); skill proposal filed (pending); Pages still open.*
+
 ## Operational lessons (banked 2026-09-29)
 
 - **key.txt CF_API_TOKEN fails API verify (6111)** — CF deploys use wrangler's
@@ -89,6 +91,26 @@ env secret `SI_API_TOKENS` (comma-separated) on the Worker.
   filters by `kind` in JS. Revisit when the platform behaves.
 - Empty-string metadata values get Vectorize upserts silently rejected — omit
   absent fields instead of sending `""`.
+
+## Local reflex layer — lever-runner synergy (Casey 15:36)
+
+[lever-runner](https://github.com/SuperInstance/lever-runner) is the same doctrine
+one layer down: *teach once, run forever; the LLM never sees your shell*. Its
+three gates (Rust 50µs template → Python 200µs cache → LLM intent-phrase only)
+are the pincher thresholds made local.
+
+The join: **fleet pinch ↔ local lever**, via `scripts/lever_bridge.py`:
+
+- fleet `FIRE` → done, zero LLM anywhere
+- fleet `ESCALATE` → local lever resolves → **compile back** so every agent inherits it
+- `--pull-fleet` teaches fleet reflexes into your shell; `--push-local` shares local levers
+
+Worker additions that make the sync possible: `GET /intents?limit=` (+ `intents_list` MCP tool).
+
+## Connecting agents
+
+`clients/README.md` — ready configs for Claude Code, OpenCode, OpenClaw
+(streamable-http), plus curl/REST for everything else.
 
 ## Open questions for Casey
 
