@@ -326,3 +326,164 @@ Design 1's receipt, produced by hand for one lane.
 - Prereg: `/home/eileen/projects/quilt-gpu-lab/proposals/runs/HY3C-rederive-coherence.md`
 - Secret handling: key read at use-time from `/home/eileen/.config/deepinfra/token`;
   never echoed, logged, or written to any artifact (this doc included).
+
+---
+
+# §7 — HY4-PREVIEW TRIAL (lane HY4-TRIAL)
+
+**Lane:** HY4-TRIAL (follow-up to HY3-CACHE) · **Runner (curator):** deepseek-v4-flash
+· **EXPERT SEAT:** `tencent/Hy4-preview` via DeepInfra OpenAI-compatible API (live 2026-10-01)
+· **Target:** the targeted head-to-head HY3 recommended — **single surface (Surface 3,
+provider prompt-cache economics)**, Hy4-preview vs Hy3.
+
+**Goal (from HY3 §5 rider):** test whether Hy4-preview fixes the quota/price/column
+hallucinations that Hy3 produces on the surface *where factual platform knowledge matters
+most*, while keeping the failure-mode discipline.
+
+**Method.** Same standing expert system prompt (the §-in-quoted brief Hy3 got, reused
+verbatim from `scripts/hy3_lane_cache.py`), same Surface-3 expansion brief
+(`scripts/hy3_lane_r1.py::R1.3`), one continued message array (cache doctrine practiced),
+**3 calls** (≤6 budget): (1) R1.3 expansion, (2) fact self-audit, (3) self-red-team.
+Driver: `scripts/hy4_trial.py` · raw transcript: `docs/_hy4_trial_state.json`.
+Key read at use-time; never echoed/logged/written.
+
+**Disclosed asymmetry (fairness).** Calls 2–3 are a Hy4-only probe: Hy3 was never asked to
+audit its own facts. The *primary* comparison is call 1, where both models answered the
+*identical* brief cold. Hy3's quotes are pulled from its expansion/design transcript
+(`docs/_hy3_lane_state.json`); Hy4's from its expansion + audit.
+
+## 7.1 — Live trial receipt (Hy4-preview, one continued thread)
+
+| tag | prompt_tokens | cached_tokens | completion | cache hit | reasoning chars |
+|---|---|---|---|---|---|
+| HY4.R1.3-expansion | 783 | 0 | 6000 | 0.000 | 15,280 |
+| HY4.R2-fact-self-audit | 3,298 | 512 | 6000 | 0.155 | 15,188 |
+| HY4.R4-red-team | 5,742 | 2,816 | 4,383 | 0.490 | 15,213 |
+| **TOTAL** | **9,823** | **3,328** | **16,383** | **0.339** | 45,681 |
+
+Reading: same warm-prefix doctrine holds (hit fraction climbs 0.00 → 0.49 as the prefix
+stabilizes — the same shape Hy3 showed early in its run, 0.34 → 0.60 over its first calls).
+**Both calls 1–2 hit the `max_tokens=6000` ceiling**, and ~15.2k chars of hidden
+`reasoning_content` were emitted per call: Hy4-preview is a long-reasoning model whose
+chain-of-thought competes for the same completion budget as the answer, so **the R1
+expansion truncated inside idea 10** (Hy3 answered 12 complete ideas). Practical rider:
+give Hy4 ≥2× the output budget.
+
+## 7.2 — Side-by-side facts table (claim · Hy3 said · Hy4 said · ground truth)
+
+Ground truth = DeepInfra `GET /v1/openai/models` metadata (live 2026-10-01, fetched by
+`scripts/hy4_groundtruth.py`), Cloudflare docs (D1/Vectorize/KV pricing pages, Apr 2026),
+DeepInfra prompt-caching docs + retention blog (Aug 2026), and `schema.sql`.
+
+| # | Claim | Hy3 said | Hy4 said | Ground truth | Winner |
+|---|---|---|---|---|---|
+| 1 | DeepInfra cache billing | “DeepInfra **bills minimum 1 min kept-warm per prefix**” (S3#8), asserted as fact | No fee asserted; audit: ~60% that caches have a retention window, source=**inference**, no number given | **FALSE.** Automatic prefix cache is best-effort, no minimum kept-warm fee. Explicit retention is opt-in (`prompt_cache_options {mode:explicit, ttl:5m\|1h}`), billed a **write premium upfront** (`cache_write_tokens`), reused at cache-read rate. | **Hy4** (abstained) |
+| 2 | Vectorize free quota | “Vectorize ~5k/`near` day (**free 100k**)” (D2 rough cost) | No quota asserted | **FALSE.** Workers Free = **30M queried vector dimensions/month**, 5M stored dims. No 100k/day `/near` allowance exists. | **Hy4** (abstained) |
+| 3 | D1 free write quota | “~5k rows/day D1 (**free: 100k/day**)” (D1 rough cost) | No quota asserted (proposed a table, no limit claim) | **TRUE.** D1 Workers Free = **100,000 rows written/day** (5M read/day, 5 GB). | **Hy3** |
+| 4 | `bookings.lamport` column | Used `bookings.lamport` / `max(bookings.lamport)` as a watermark (4 occurrences) | Never used; put watermarks in proposed tables | **FALSE.** `bookings` = id, agent, gist, body, receipt_url, books_to, vector_id, gamma, eta, ts, embedded. **No `lamport`.** | **Hy4** |
+| 5 | `intents` version/lamport | Implied intents versioning | Not claimed | **FALSE.** `intents` = id, intent, context, reflex, confidence, vector_id, uses, created_ts, updated_ts. No `lamport`. | **Hy4** |
+| 6 | `demotion_receipts` columns | `(tile_id, from_tier, to_tier, fact_survival, lattice_snap, method, ts)` | Wrote `demotion_receipts(tile_id, **version**, **reason**='epoch_close')` (idea 3); audit half-misattributed `version` to “the environment” | **Hy3 EXACT.** Real columns = tile_id, from_tier, to_tier, fact_survival, lattice_snap, method, ts. Real fix: invent `reason`/`method` usage, not `version`. | **Hy3** (Hy4 minor slip, disclosed) |
+| 7 | Seat model prices (per 1M) | No per-token price asserted (only “fractions of a cent” for its own lane) | Audit: “All specific prices are **unsourced numbers I did not give**” — 0% on pricing | **Hy3** $0.13 in / **$0.033 cache-read** / $0.53 out · **Hy4-preview** $0.834 in / **$0.042 cache-read** / $2.501 out. | **tie** (both abstained) |
+| 8 | Seat model facts | 295B MoE, 21B active, 3.8B MTP, ctx 262,144 | Never asserted its own arch | **Confirmed** (metadata): Hy3 295B MoE/21B active/262k ctx; Hy4-preview 770B MoE/49B active/1M ctx/**Gated DeepSeek Sparse Attention + IndexCache**, tags `prompt_cache`,`reasoning`. | **tie** (both silent / correct) |
+
+**Facts score.** Checkable platform claims Hy3 volunteered: **2 true / 4 false** (~33%) —
+and the two fabrications (#1, #2) are exactly the price/quota class the rider warned about.
+Hy4-preview volunteered **0 fabricated platform facts** (1 minor schema slip, #6, which its
+own audit surfaced) and explicitly abstained on every price/quota it could not source.
+**Hy4 = A; Hy3 = D** on this surface's fact axis.
+
+## 7.3 — Expansion quality (identical brief)
+
+- **Hy3:** 12 complete ideas, dense, schema-anchored, each with a named failure +
+  detect + escape. Re-derived “a hit is a claim needing a receipt” independently.
+- **Hy4-preview:** 10 ideas (11th truncated by output budget), each **MECHANISM + HOW IT
+  FAILS (stale/thrash/poison/coherence + detect + escape)**. Several are *sharper* than
+  Hy3's: idea 2 replaces “one model per thread” doctrine with an enforceable
+  **`prefix_hash` lease + fencing tokens**; idea 3 makes the **serving window a first-class
+  `cache_epochs` row** carrying `gpu_uuid`/`driver_version`/`model_sha`; idea 8 adds a
+  `model_pricing` join so blended cost isn't averaged across providers; idea 6 correctly
+  scopes determinism to `seed ∧ epoch_id`.
+- **Verdict on expansion:** *quality* — Hy4 ≥ Hy3 (deeper on the exact epoch/lease coupling
+  Hy3 only gestured at); *volume/throughput* — Hy3 wins (12 complete vs 10 truncated, and
+  ~4× cheaper). Both are failure-mode-first; neither is filler.
+
+## 7.4 — Failure-mode honesty (verbatim evidence)
+
+**Hy4 self-audit (call 2), verbatim:**
+> “**Confidence:** 100% that I proposed exactly this schema; **0% confidence this corresponds
+> to any existing production table.** … **Source:** My own design proposal / invention. Not
+> from D1/docs/spec.” — and, on pricing: “**All specific prices are unsourced numbers I did
+> not give.**”
+
+**Hy4 self-red-team (call 3), verbatim:**
+> “The lease is keyed on `prefix_hash` alone. But the *same* `prefix_hash` can be served
+> across different `epoch_id`s … **Fix: book on `(prefix_hash, epoch_id)`, not `prefix_hash`
+> alone.**”  — and it named its own truncated idea 10 as the weakest, and identified the
+> unanswered half of the brief (“who calls `rotate`? what stops two lanes double-rotating?”).
+
+**Hy3 red-team (R4), verbatim:** found a real cross-design epoch bug too — “D2 … uses
+Vectorize `vector_id` ts as epoch; D1 lane epoch is a GPU-window id … They disagree on
+‘stale’ with no join key.” The findings are the same *shape*; Hy4's is stated as an
+enforcement fix. **Hy4 = A; Hy3 = B+** on honesty — Hy4 volunteers “I did not verify this”
+unprompted; Hy3's defect (§0) is that its fabrications were stated as fact and only
+caught by the runner's later verification.
+
+## 7.5 — Does 1M-context + Gated-DSA show an expansion-quality difference?
+
+**Null result, honest.** The Hy4 thread never exceeded **5,742 prompt tokens** — two orders
+of magnitude below its 1M window — so long-context capability was *not exercised* and cannot
+be credited for the quality delta. Gated DeepSeek Sparse Attention + IndexCache is a
+prefill/attention-efficiency mechanism (latency/cost per token), invisible in answer
+quality at this prefix size. The observed delta is **post-training, not architecture**:
+~15.2k chars of hidden reasoning per call, markedly higher calibration (`0% confidence`,
+explicit abstention, adversarial self-audit), and lower hallucination. What *is* attributable
+to the 770B/1M/engineering-post-trained profile is **behaviour**: it chooses to abstain and
+to flag its own unverified claims, whereas Hy3 fills the gap with a confident number.
+Caveat: n=1 thread, single surface.
+
+## 7.6 — Cost (the irony worth booking)
+
+| lane | calls | prompt | cached | output | est. cost |
+|---|---|---|---|---|---|
+| Hy3 (Surface-3 lane, full) | 8 | 52,741 | 42,352 | 8,854 | **$0.0074** |
+| Hy4-preview (this trial) | 3 | 9,823 | 3,328 | 16,383 | **$0.0465** |
+
+Hy4-preview costs **~6.4× more on fresh input** ($0.834 vs $0.13/M), **4.7× on output**
+($2.501 vs $0.53/M), and — the punchline for a *cache-economics* surface — **1.27× more on
+cache-read tokens** ($0.042 vs $0.033/M). So the model that is *better at reasoning about
+prompt-cache economics* is itself the *worse cache-read unit*. Any lane promoted to Hy4 for
+volume would eat that premium on every cached call; at cached-read alone Hy4 ≈ +27%.
+
+## 7.7 — VERDICT
+
+> **PROMOTE `tencent/Hy4-preview` for the economics SURFACES — as the fact-bearing author,
+> NOT as the cost engine. Hy3 stays** for bulk expansion/red-team and for any cost-sensitive
+> lane.
+
+Rationale: the rider's test was “does Hy4 fix the quota/price facts while keeping the
+failure-mode discipline?” — **yes, decisively** (0 fabricated platform facts vs Hy3's 4;
+self-audit and self-red-team are first-class). But the ground-truth price table flips the
+naive reading: Hy4-preview is the **more expensive** seat on every axis (6.4×/4.7×/1.27×),
+so promoting it wholesale would *spend more to save less* on the very surface it wins.
+
+**Standing riders for Hy4-preview:**
+1. **Fact-bearing only.** Use Hy4 for Surface-3-class *claims* (prices, quotas, cache
+   semantics); route volume expansion and cost-sensitive bulk to Hy3. (Both cars, right lane.)
+2. **Budget for reasoning.** It burns ~15k chars of hidden reasoning per call and will
+   truncate at `max_tokens=6000`; give it ≥12k output tokens for schema-dense asks.
+3. **Diff every schema proposal against `schema.sql` before shipping** — Hy4 clearly labels
+   proposals, but it still invented `demotion_receipts.version` and half-attributed it to the
+   environment. The gate is the same as Hy3's; Hy4 just tells you when it's guessing.
+4. **n=1 caveat:** one surface, one thread. Re-test on a second economics surface before
+   making this a standing routing rule (per the fleet's own probe discipline).
+
+---
+
+## Appendix C — HY4-TRIAL artifacts
+
+- Raw transcript: `docs/_hy4_trial_state.json` (3 turns, full message array + reasoning)
+- Drivers: `scripts/hy4_trial.py` (trial), `scripts/hy4_groundtruth.py` (metadata fetch)
+- Ground-truth sources (fetched live 2026-10-01): DeepInfra `/v1/openai/models`;
+  `docs.deepinfra.com/chat/prompt-caching`; `deepinfra.com/blog/prompt-cache-retention`;
+  Cloudflare D1 / Vectorize / KV pricing pages; `schema.sql`.
+- Secret handling: identical to Appendix B — read at use-time, never written.
