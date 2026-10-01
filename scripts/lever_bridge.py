@@ -53,6 +53,7 @@ def post(url: str, body: dict, token: str = "") -> tuple[int, dict]:
     data = json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("content-type", "application/json")
+    req.add_header("User-Agent", "fleet-bridge/1.0")   # CF bot-fingerprint guard (error 1010)
     if token:
         req.add_header("Authorization", "Bearer " + token)
     try:
@@ -70,6 +71,7 @@ def post(url: str, body: dict, token: str = "") -> tuple[int, dict]:
 
 def get(url: str, token: str = "") -> tuple[int, dict]:
     req = urllib.request.Request(url, method="GET")
+    req.add_header("User-Agent", "fleet-bridge/1.0")   # CF bot-fingerprint guard (error 1010)
     if token:
         req.add_header("Authorization", "Bearer " + token)
     try:
@@ -157,9 +159,14 @@ def cmd_pull_fleet(limit: int) -> int:
 
 def cmd_push_local() -> int:
     tok = si_token()
-    try:
-        out = subprocess.run(["lever", "export"], capture_output=True, text=True, timeout=60)
-    except FileNotFoundError:
+    out = None
+    for binary in ("lever", "lever-runner"):
+        try:
+            out = subprocess.run([binary, "export"], capture_output=True, text=True, timeout=60)
+            break
+        except FileNotFoundError:
+            continue
+    if out is None:
         print("lever CLI not installed — pip install -e . in the lever-runner clone", file=sys.stderr)
         return 1
     if out.returncode != 0:
