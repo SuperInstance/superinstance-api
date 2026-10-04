@@ -40,7 +40,11 @@ GLM subagents) as native **MCP tools**.
 5. **Growth — the quilt-dba seam.** The API is a growing sheet: cells load in
    stages; adding a cell IS advancing a stage (E-D1: R1 GROWTH confirmed at
    eval 299). Context management = the developmental memory of the fleet, not
-   a static store.
+   a static store. Implemented as `canon_cells` + `stage_receipts` (the design
+   receipt prescribes the doctrine; the minimal doctrine-true shape: one canon
+   cell added → `room.stage + 1`, always, with a first-class stage receipt —
+   duplicate titles 409 without advancing, stages never regress).
+   REST: `PUT /rooms/:id/cells` (name or numeric id), `GET /rooms/:id/cells`.
 
 ## MCP surface (Streamable HTTP on the same Worker)
 
@@ -57,6 +61,9 @@ once and gets the fleet brain:
   ESCALATE (and the compile-back path).
 - `field_query` — γ/η/conservation state per cell/sheet, surprise timeline.
 - `witness_get` — receipt lookup by id/url (the honesty surface).
+- `cell_add` / `cells_list` — growth seam (quilt-dba): add a canon cell to a
+  room (advancing its stage, receipted: {room, from_stage, to_stage, cell_id,
+  ts, agent}) and read a room's cells + stage + stage-advance receipts.
 
 ## Auth
 
@@ -76,6 +83,8 @@ env secret `SI_API_TOKENS` (comma-separated) on the Worker.
 - [x] γ/η field on every call + conservation view
       (verified: field_budget 49/1585 after smoke)
 - [x] per-agent tokens + deploy + smoke (11/11 green)
+- [x] growth seam — canon_cells + stage_receipts, PUT/GET /rooms/:id/cells,
+      cell_add/cells_list MCP tools, growth_smoke.sh green (v0.2.0)
 - [ ] docs page (Pages) + client skills for Claude Code / OpenCode / OpenClaw
 
 *Clients done (`clients/README.md`); skill proposal filed (pending); Pages still open.*
