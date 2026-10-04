@@ -15,6 +15,8 @@
  *   GET  /near?q=&k=
  *   GET  /since?ts=
  *   POST /room {name}   /  GET /rooms
+ *   PUT  /rooms/:id/cells {title, body?}   — growth seam: add canon cell = advance stage (receipted)
+ *   GET  /rooms/:id/cells                  — cells + stage + stage-advance receipts (:id = id or name)
  *   POST /tile {room,key,content,tier?}  /  GET /tile?room=&key=  /  GET /tile/history?room=&key=
  *   POST /tile/demote {room,key,to_tier,content?,fact_survival?,lattice_snap?,method}
  *   POST /pinch {intent, context?}
@@ -174,6 +176,15 @@ async function coreSince(args, env) {
 
 async function getRoom(env, name) {
   return env.DB.prepare("SELECT id, name, stage, created_ts FROM rooms WHERE name=?1").bind(name).first();
+}
+
+/** Growth seam addresses rooms by id (digits) or name — both resolve honestly. */
+async function resolveRoom(env, idOrName) {
+  if (/^\d+$/.test(idOrName)) {
+    const byId = await env.DB.prepare("SELECT id, name, stage, created_ts FROM rooms WHERE id=?1").bind(Number(idOrName)).first();
+    if (byId) return byId;
+  }
+  return getRoom(env, idOrName);
 }
 
 async function coreRoomCreate(args, env) {
@@ -362,6 +373,72 @@ async function coreIntents(args, env) {
   return { count: intents.length, intents };
 }
 
+// ── Growth seam (quilt-dba): adding a canon cell IS advancing a stage ──────
+// Design receipt (README §5) prescribes the doctrine but is silent on table/
+// endpoint specifics, so this is the minimal doctrine-true shape: one canon
+// cell added -> room.stage + 1, always, with a first-class stage receipt
+// {room, from_stage, to_stage, cell_id, ts, agent}. Duplicate title = 409, no
+// advance, no receipt (no phantom stages on retry). Stages never regress.
+
+async function coreCellAdd(args, env, agent) {
+  const roomRef = str(args.room);
+  const title = str(args.title);
+  if (!roomRef || !title) throw new HttpError(400, "room and title are required");
+  const body = typeof args.body === "string" ? args.body : "";
+  const who = agent || str(args.agent) || ""; // token identity wins
+  const roomRow = await resolveRoom(env, roomRef);
+  if (!roomRow) throw new HttpError(404, "room not found: " + roomRef + " (POST /room first)");
+  const dup = await env.DB.prepare("SELECT id FROM canon_cells WHERE room_id=?1 AND title=?2").bind(roomRow.id, title).first();
+  if (dup) throw new HttpError(409, "cell exists: " + roomRow.name + "/" + title + " — stage not advanced");
+  const ts = nowSec();
+  const fromStage = roomRow.stage;
+  const toStage = fromStage + 1;
+  const ins = await env.DB.prepare(
+    "INSERT INTO canon_cells (room_id, title, body, stage, agent, created_ts) VALUES (?1,?2,?3,?4,?5,?6)"
+  ).bind(roomRow.id, title, body, toStage, who, ts).run();
+  const cellId = ins.meta.last_row_id;
+  await env.DB.batch([
+    env.DB.prepare("UPDATE rooms SET stage=?1 WHERE id=?2").bind(toStage, roomRow.id),
+    env.DB.prepare("INSERT INTO stage_receipts (room_id, cell_id, from_stage, to_stage, agent, ts) VALUES (?1,?2,?3,?4,?5,?6)")
+      .bind(roomRow.id, cellId, fromStage, toStage, who, ts),
+  ]);
+  // meaning seam (best-effort): canon cells are recallable via /near
+  let embedded = false, err = null;
+  const vectorId = "cell:" + (await sha256hex32(roomRow.name + "\u0000" + title));
+  try {
+    const vector = await embed(env, roomRow.name + " / " + title + "\n" + body);
+    await env.INDEX.upsert([{ id: vectorId, values: vector, metadata: { kind: "cell", room: roomRow.name, title, ts } }]);
+    await env.DB.prepare("UPDATE canon_cells SET vector_id=?1 WHERE id=?2").bind(vectorId, cellId).run();
+    embedded = true;
+  } catch (e) { err = String(e); }
+  return {
+    ok: true,
+    room: roomRow.name,
+    cell: { id: cellId, title, body, stage: toStage, agent: who, created_ts: ts },
+    stage_advance: { room: roomRow.name, from_stage: fromStage, to_stage: toStage, cell_id: cellId, ts, agent: who },
+    embedded, ...(err ? { error: err } : {}),
+  };
+}
+
+async function coreCellList(args, env) {
+  const roomRef = str(args.room);
+  if (!roomRef) throw new HttpError(400, "room is required");
+  const roomRow = await resolveRoom(env, roomRef);
+  if (!roomRow) throw new HttpError(404, "room not found: " + roomRef);
+  const cells = await env.DB.prepare(
+    "SELECT id, title, body, stage, agent, vector_id, created_ts FROM canon_cells WHERE room_id=?1 ORDER BY stage ASC, id ASC"
+  ).bind(roomRow.id).all();
+  const receipts = await env.DB.prepare(
+    "SELECT id, cell_id, from_stage, to_stage, agent, ts FROM stage_receipts WHERE room_id=?1 ORDER BY id ASC"
+  ).bind(roomRow.id).all();
+  return {
+    room: { id: roomRow.id, name: roomRow.name },
+    stage: roomRow.stage,
+    cells: (cells && cells.results) || [],
+    receipts: (receipts && receipts.results) || [],
+  };
+}
+
 // ─────────────────────────────── MCP surface ───────────────────────────────
 
 const TOOL_SCHEMAS = {
@@ -454,7 +531,7 @@ async function handleMcp(request, env, agent) {
 async function argsFrom(request, url) {
   const args = {};
   for (const [k, v] of url.searchParams) args[k] = v;
-  if (request.method === "POST") {
+  if (request.method === "POST" || request.method === "PUT") {
     try {
       const body = await request.json();
       if (body && typeof body === "object") Object.assign(args, body);
@@ -489,6 +566,14 @@ export default {
       if (request.method === "GET" && path === "/since") return json(await coreSince(args, env));
       if (request.method === "POST" && path === "/room") return json(await coreRoomCreate(args, env));
       if (request.method === "GET" && path === "/rooms") return json(await coreRoomList(args, env));
+      {
+        const m = /^\/rooms\/([^/]+)\/cells$/.exec(path);
+        if (m) {
+          const roomRef = decodeURIComponent(m[1]);
+          if (request.method === "PUT") return json(await coreCellAdd({ ...args, room: roomRef }, env, agent));
+          if (request.method === "GET") return json(await coreCellList({ ...args, room: roomRef }, env));
+        }
+      }
       if (request.method === "POST" && path === "/tile") return json(await coreTileWrite(args, env));
       if (request.method === "GET" && path === "/tile") return json(await coreTileGet(args, env));
       if (request.method === "GET" && path === "/tile/history") return json(await coreTileHistory(args, env));
@@ -499,7 +584,7 @@ export default {
       if (request.method === "GET" && path === "/witness") return json(await coreWitness(args, env));
       if (request.method === "GET" && path === "/intents") return json(await coreIntents(args, env));
 
-      return json({ error: "not found", service: "superinstance-api", routes: ["POST /book", "GET /near", "GET /since", "POST /room", "GET /rooms", "POST /tile", "GET /tile", "GET /tile/history", "POST /tile/demote", "POST /pinch", "POST /pinch/compile", "GET /field", "GET /witness", "GET /intents", "POST /mcp"] }, 404);
+      return json({ error: "not found", service: "superinstance-api", routes: ["POST /book", "GET /near", "GET /since", "POST /room", "GET /rooms", "PUT /rooms/:id/cells", "GET /rooms/:id/cells", "POST /tile", "GET /tile", "GET /tile/history", "POST /tile/demote", "POST /pinch", "POST /pinch/compile", "GET /field", "GET /witness", "GET /intents", "POST /mcp"] }, 404);
     } catch (err) {
       if (err instanceof HttpError) return json({ error: err.message }, err.status);
       return json({ error: String((err && err.message) || err) }, 500);
