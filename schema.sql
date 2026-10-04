@@ -77,6 +77,32 @@ CREATE TABLE IF NOT EXISTS intents (
 -- pinch thresholds: known ≥ 0.92 fires; 0.75–0.92 CONFIRM; else ESCALATE.
 -- Escalated resolutions compile back as new intents (cortex teaches shell).
 
+-- ── Growth: canon cells (quilt-dba seam — adding a cell IS advancing a stage; ──
+-- E-D1: R1 GROWTH confirmed at eval 299). Design receipt is silent on table
+-- specifics, so this is the minimal doctrine-true shape:
+--   one canon cell added = room.stage + 1, always receipted; never regressed.
+CREATE TABLE IF NOT EXISTS canon_cells (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_id    INTEGER NOT NULL REFERENCES rooms(id),
+  title      TEXT NOT NULL,                  -- canonical cell name (unique per room)
+  body       TEXT NOT NULL DEFAULT '',       -- canonical content
+  stage      INTEGER NOT NULL,               -- stage this cell advanced the room TO
+  agent      TEXT NOT NULL DEFAULT '',       -- who grew it (token identity wins)
+  vector_id  TEXT,                           -- meaning seam (best-effort embed)
+  created_ts INTEGER NOT NULL,
+  UNIQUE (room_id, title)                    -- no phantom double-advance on retry
+);
+
+CREATE TABLE IF NOT EXISTS stage_receipts (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_id    INTEGER NOT NULL REFERENCES rooms(id),
+  cell_id    INTEGER NOT NULL REFERENCES canon_cells(id),
+  from_stage INTEGER NOT NULL,
+  to_stage   INTEGER NOT NULL,
+  agent      TEXT NOT NULL DEFAULT '',
+  ts         INTEGER NOT NULL
+);
+
 -- ── Field: conservation view (γ+η ≤ 1585 per agent per day) ──
 CREATE VIEW IF NOT EXISTS field_budget AS
 SELECT agent, date(ts, 'unixepoch') AS day,
@@ -87,3 +113,5 @@ FROM bookings GROUP BY agent, day;
 
 CREATE INDEX IF NOT EXISTS idx_tiles_room ON tiles(room_id);
 CREATE INDEX IF NOT EXISTS idx_tiles_key  ON tiles(key);
+CREATE INDEX IF NOT EXISTS idx_cells_room          ON canon_cells(room_id);
+CREATE INDEX IF NOT EXISTS idx_stage_receipts_room ON stage_receipts(room_id);
