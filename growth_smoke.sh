@@ -91,11 +91,15 @@ sys.exit(0 if ("cell_add" in ns and "cells_list" in ns) else 1)'
 NTOOLS=$(J="$R" python3 -c 'import json,os; print(len(json.loads(os.environ["J"])["result"]["tools"]))')
 echo "   tool count: $NTOOLS"
 
+say "token identity probe (book attributes to the token's agent)"
+AG=$(curl -s -X POST "$BASE/book" -H "$H" -H "$CT" -d '{"gist":"growth-smoke identity probe","gamma":1,"eta":1}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["agent"])')
+echo "   token agent: $AG"
+
 say "MCP tools/call cell_add + cells_list round-trip"
 R=$(curl -s -X POST "$BASE/mcp" -H "$H" -H "$CT" -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"cell_add\",\"arguments\":{\"room\":\"$ROOM\",\"title\":\"mcp-cell\",\"body\":\"grown via mcp\"}}}")
 jcheck "mcp cell_add ok + advance 3->4, agent from token" "$R" \
   'c=json.loads(d["result"]["content"][0]["text"])
-sys.exit(0 if (c["ok"] and c["stage_advance"]["from_stage"]==3 and c["stage_advance"]["to_stage"]==4 and c["stage_advance"]["agent"]=="smoke") else 1)'
+sys.exit(0 if (c["ok"] and c["stage_advance"]["from_stage"]==3 and c["stage_advance"]["to_stage"]==4 and c["stage_advance"]["agent"]=="'"$AG"'") else 1)'
 R=$(curl -s -X POST "$BASE/mcp" -H "$H" -H "$CT" -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"cells_list\",\"arguments\":{\"room\":\"$ROOM\"}}}")
 jcheck "mcp cells_list 3 cells stage 4" "$R" \
   'c=json.loads(d["result"]["content"][0]["text"])
