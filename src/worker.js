@@ -454,6 +454,8 @@ const TOOL_SCHEMAS = {
   pinch: { intent: "string (required)", context: "string" },
   pinch_compile: { intent: "string (required)", reflex: "string (required)", confidence: "number 0..1 (required)", context: "string" },
   intents_list: { limit: "int 1..500" },
+  cell_add: { room: "string (required, name or id)", title: "string (required)", body: "string" },
+  cells_list: { room: "string (required, name or id)" },
   field_query: { agent: "string" },
   witness_get: { id: "string (required)" },
 };
@@ -464,6 +466,7 @@ const CORE_BY_TOOL = {
   tile_write: coreTileWrite, tile_get: coreTileGet, tile_history: coreTileHistory, tile_demote: coreTileDemote,
   pinch: corePinch, pinch_compile: corePinchCompile,
   intents_list: coreIntents,
+  cell_add: coreCellAdd, cells_list: coreCellList,
   field_query: coreField, witness_get: coreWitness,
 };
 
@@ -503,7 +506,7 @@ async function handleMcp(request, env, agent) {
       return reply({
         protocolVersion: (params && params.protocolVersion) || "2025-03-26",
         capabilities: { tools: {} },
-        serverInfo: { name: "superinstance-api", version: "0.1.0" },
+        serverInfo: { name: "superinstance-api", version: "0.2.0" },
       });
     }
     if (method === "ping") return reply({});
@@ -516,6 +519,7 @@ async function handleMcp(request, env, agent) {
       let result;
       if (name === "book") result = await coreBook(args, env, agent);
       else if (name === "field_query") result = await coreField(args, env, agent);
+      else if (name === "cell_add") result = await coreCellAdd(args, env, agent); // receipt attributes to token identity
       else result = await fn(args, env);
       return reply({ content: [{ type: "text", text: JSON.stringify(result) }] });
     }
@@ -548,7 +552,7 @@ export default {
 
     try {
       if (path === "/health") {
-        return json({ ok: true, service: "superinstance-api", version: "0.1.0", seams: ["tiles", "meaning", "reflex", "field", "growth"], mcp: "/mcp" });
+        return json({ ok: true, service: "superinstance-api", version: "0.2.0", seams: ["tiles", "meaning", "reflex", "field", "growth"], mcp: "/mcp" });
       }
 
       if (path === "/mcp") {
